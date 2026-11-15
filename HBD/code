@@ -1,0 +1,135 @@
+from machine import Pin, PWM, SoftI2C, RTC
+import ssd1306
+import time
+import random
+
+time.sleep(1)
+
+i2c = SoftI2C(sda=Pin(0), scl=Pin(1), freq=100000)
+oled = ssd1306.SSD1306_I2C(128, 64, i2c)
+
+led_pins = [11, 12]
+leds = [Pin(p, Pin.OUT) for p in led_pins]
+num_leds = len(leds)
+
+# 蜂鳴器
+buzzer = PWM(Pin(14), freq=1000)
+buzzer.duty_u16(0) 
+
+# 按鈕
+button = Pin(16, Pin.IN, Pin.PULL_UP)
+
+# --- 參數與音樂資料 ---
+COUNTDOWN_SECONDS = 5  
+
+melody = [
+    (392, 200), (392, 200), (440, 400), (392, 400), (523, 400), (494, 800),
+    (392, 200), (392, 200), (440, 400), (392, 400), (587, 400), (523, 800),
+    (392, 200), (392, 200), (784, 400), (659, 400), (523, 400), (494, 400), (440, 600),
+    (698, 200), (698, 200), (659, 400), (523, 400), (587, 400), (523, 800)
+]
+
+def set_all_leds(state):
+    for led in leds:
+        led.value(state)
+
+def play_tone_with_led(freq, duration_ms, led_index):
+    if freq > 0:
+        buzzer.freq(freq)
+        buzzer.duty_u16(32768)  
+        leds[led_index].value(1)
+    else:
+        buzzer.duty_u16(0)
+        leds[led_index].value(0)
+        
+    time.sleep_ms(duration_ms)
+    
+    buzzer.duty_u16(0)
+    leds[led_index].value(0)
+    time.sleep_ms(50)
+
+def draw_cake(flame_on):
+    oled.fill_rect(44, 50, 40, 14, 1) 
+    oled.fill_rect(50, 40, 28, 10, 1) 
+    oled.vline(64, 34, 6, 1)
+    if flame_on:
+        oled.fill_rect(63, 29, 3, 4, 1)
+    else:
+        oled.rect(63, 30, 3, 3, 1)
+
+def draw_fireworks():
+    for _ in range(8):
+        x = random.randint(5, 122)
+        y = random.randint(12, 35)
+        oled.pixel(x, y, 1)
+        oled.pixel(x+1, y, 1)
+        oled.pixel(x-1, y, 1)
+        oled.pixel(x, y+1, 1)
+        oled.pixel(x, y-1, 1)
+
+# --- 階段 0: 等待按鈕觸發 ---
+oled.fill(0)
+oled.text("Press Button", 16, 20)
+oled.text("to Start!", 28, 40)
+oled.show()
+
+while button.value() == 1:
+    time.sleep_ms(50)
+
+time.sleep_ms(200)
+
+# --- 階段 1: 5秒倒數計時與現在時間 ---
+for i in range(COUNTDOWN_SECONDS, 0, -1):
+    oled.fill(0)
+    t = time.localtime()
+    time_str = "{:02d}:{:02d}:{:02d}".format(t[3], t[4], t[5])
+    
+    oled.text("Time: " + time_str, 15, 10)
+    oled.text("Countdown:", 25, 30)
+    oled.text(str(i), 60, 45)
+    oled.show()
+    
+    buzzer.freq(1000)
+    buzzer.duty_u16(10000)
+    set_all_leds(1)
+    time.sleep_ms(100)
+    
+    buzzer.duty_u16(0)
+    set_all_leds(0)
+    time.sleep_ms(900)
+
+# --- 階段 2: 倒數結束 ---
+oled.fill(0)
+oled.text("READY!", 40, 30)
+oled.show()
+
+#  LED 數量交互閃爍
+for i in range(30):
+    current_led = leds[i % num_leds]
+    current_led.value(1)
+    time.sleep_ms(40)
+    current_led.value(0)
+
+# --- 階段 3: 生日快樂歌與動畫 ---
+flame_state = True
+led_idx = 0  
+
+for note in melody:
+    freq, duration = note
+    
+    oled.fill(0)
+    oled.text("Happy Birthday!", 4, 0)
+    draw_fireworks()
+    draw_cake(flame_state)
+    oled.show()
+    
+    flame_state = not flame_state 
+    play_tone_with_led(freq, int(duration * 0.8), led_idx)
+    led_idx = (led_idx + 1) % num_leds 
+
+# --- 階段 4: 結束程式 ---
+oled.fill(0)
+oled.text("The End.", 35, 30)
+oled.show()
+buzzer.duty_u16(0)
+set_all_leds(0)
